@@ -1,5 +1,15 @@
 package com.fatec.easy_rag.service;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.List;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.springframework.stereotype.Service;
+
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.loader.FileSystemDocumentLoader;
 import dev.langchain4j.data.document.splitter.DocumentSplitters;
@@ -11,19 +21,9 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.store.embedding.EmbeddingStoreIngestor;
+import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import jakarta.annotation.PostConstruct;
-
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.springframework.stereotype.Service;
-
-import com.fatec.easy_rag.controller.RagController;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.List;
 
 @Service
 public class AIService {
@@ -35,15 +35,14 @@ public class AIService {
 	// O construtor injeta os componentes de baixo nível (ChatModel, EmbeddingModel,
 	// EmbeddingStore)
 	// que foram definidos como Beans na classe LangChain4jConfig.
-	public AIService(ChatLanguageModel chatModel, // Alterado de ChatLanguageModel para ChatModel
+	public AIService(ChatLanguageModel chatModel, // na versão mais atual chama ChatModel
 			EmbeddingModel embeddingModel, // O EmbeddingModel injetado (OpenAiEmbeddingModel)
 			EmbeddingStore<TextSegment> embeddingStore) {
 		this.embeddingModel = embeddingModel;
 		this.embeddingStore = embeddingStore;
 
-		// *** AQUI É ONDE O AiServices É CONSTRUÍDO COM RAG E MEMÓRIA ***
-		// Para RAG, você DEVE usar AiServices.builder() para configurar o
-		// contentRetriever.
+		// Instancia o AiServices com RAG e memória de chat
+		
 		this.assistant = AiServices.builder(Assistente.class).chatLanguageModel(chatModel) // Define o modelo de chat a
 																							// ser usado
 				.chatMemory(MessageWindowChatMemory.withMaxMessages(10)) // Adiciona memória de chat
@@ -56,36 +55,45 @@ public class AIService {
 				.build();
 	}
 
-	// Método executado após a injeção de dependências, para carregar e ingerir
-	// documentos.
+	// garante que quando do aiservice estiver pronto para receber perguntas o embedding
+	// já estará populado.
 	@PostConstruct
 	public void init() {
 		try {
-			logger.info(">>>>>> Carrega documento.");
+			logger.info(">>>>>> Iniciar preparação da base de conhecimento.");
 			loadAndIngestDocuments();
 		} catch (IOException e) {
-			System.err.println("Erro ao carregar e ingerir documentos: " + e.getMessage());
+			logger.error(">>>>>> Erro ao carregar e ingerir documentos: " + e.getMessage());
 		}
 	}
-
-	// Carrega documentos de uma pasta e os processa para RAG.
+	/*
+	 * A biblioteca Apache Tika, que suporta uma varidade de tipos de documentos, é usada para
+	 * detectar o tipo de documento e analisa-lo (parse). Essa dependencia é carregada
+	 * no starter project do spring boot langchain4j.
+	 * É possivel tambem filtrar os documentos:
+	 * PathMatcher pathMatcher = FileSystems.getDefault().getPathMatcher("glob:*.pdf");
+     * List<Document> documents = FileSystemDocumentLoader.loadDocuments("/home/langchain4j/documentation", pathMatcher);
+	 */
 	private void loadAndIngestDocuments() throws IOException {
 		Path documentsPath = Paths.get("e:/documents");
-		logger.info(">>>>>> Obtem o path do arquivo => " + documentsPath.toString());
+		logger.info(">>>>>> Verifica a existencia do path de documentos => " + documentsPath.toString());
 		if (!Files.exists(documentsPath)) {
 			Files.createDirectories(documentsPath);
-			logger.info(">>>>>> Diretório de documentos criado: " + documentsPath);
+			logger.info(">>>>>> Cria o diretorio e um exemplo de documentos: " + documentsPath);
 			Files.writeString(documentsPath.resolve("exemplo.txt"),
 					"O céu é azul e o mar é profundo. O sol brilha forte. A Terra é um planeta maravilhoso. A capital do Brasil é Brasília.");
-			System.out.println("Arquivo de exemplo 'exemplo.txt' criado.");
+			logger.info(">>>>>> Arquivo de exemplo 'exemplo.txt' criado.");
 		}
-		logger.info(">>>>>> O path existe.");
+		logger.info(">>>>>> Carrega todos os arquivos neste path.");
 		List<Document> documents = FileSystemDocumentLoader.loadDocuments(documentsPath);
-		var documentSplitter = DocumentSplitters.recursive(500, 0);
+		logger.info(">>>>>> Divide o documento em segumentos de texto (chunks) .");
+		var documentSplitter = DocumentSplitters.recursive(500, 50);
 		List<TextSegment> segments = documentSplitter.splitAll(documents);
-
+		logger.info(">>>>>> Processa o arquivo para armazenar a informação em um banco de dados vetorial.");
 		List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
 		embeddingStore.addAll(embeddings, segments);
+		//InMemoryEmbeddingStore<TextSegment> embeddignStore = new InMemoryEmbeddingStore<>();
+		//EmbeddingStoreIngestor.ingest(documents, embeddingStore);
 		logger.info(
 				"Documentos carregados e embeddings criados/armazenados. Total de segmentos: " + segments.size());
 	}
