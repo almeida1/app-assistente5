@@ -18,11 +18,12 @@ import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatLanguageModel; // Alterado de ChatLanguageModel para ChatModel
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.rag.content.Content;
+import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
+import dev.langchain4j.rag.query.Query;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.store.embedding.EmbeddingStore;
-import dev.langchain4j.store.embedding.EmbeddingStoreIngestor;
-import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import jakarta.annotation.PostConstruct;
 
 @Service
@@ -31,6 +32,7 @@ public class AIService {
 	private Assistente assistant; // A instância da sua interface Assistant
 	private EmbeddingModel embeddingModel;
 	private EmbeddingStore<TextSegment> embeddingStore;
+	private ContentRetriever contentRetriever; // Adicionar o ContentRetriever como campo
 
 	// O construtor injeta os componentes de baixo nível (ChatModel, EmbeddingModel,
 	// EmbeddingStore)
@@ -40,7 +42,13 @@ public class AIService {
 			EmbeddingStore<TextSegment> embeddingStore) {
 		this.embeddingModel = embeddingModel;
 		this.embeddingStore = embeddingStore;
-
+		// Instanciar o ContentRetriever aqui para poder usá-lo antes de chamar o assistant
+        this.contentRetriever = EmbeddingStoreContentRetriever.builder()
+                .embeddingStore(embeddingStore)
+                .embeddingModel(embeddingModel)
+                .maxResults(3)
+                .minScore(0.75)
+                .build();
 		// Instancia o AiServices com RAG e memória de chat
 		
 		this.assistant = AiServices.builder(Assistente.class).chatLanguageModel(chatModel) // Define o modelo de chat a
@@ -49,8 +57,8 @@ public class AIService {
 				.contentRetriever(EmbeddingStoreContentRetriever.builder() // Configura o retriever para RAG
 						.embeddingStore(embeddingStore) // Usa o EmbeddingStore para buscar
 						.embeddingModel(embeddingModel) // Usa o EmbeddingModel para embeddar a pergunta
-						.maxResults(2) // Busca os 2 chunks mais relevantes
-						.minScore(0.7) // Score mínimo de similaridade
+						//.maxResults(2) // Busca os 2 chunks mais relevantes
+						//.minScore(0.7) // Score mínimo de similaridade
 						.build())
 				.build();
 	}
@@ -60,10 +68,10 @@ public class AIService {
 	@PostConstruct
 	public void init() {
 		try {
-			logger.info(">>>>>> Iniciar preparação da base de conhecimento.");
+			logger.info(">>>>>> AIService - inicia a preparação da base de conhecimento.");
 			loadAndIngestDocuments();
 		} catch (IOException e) {
-			logger.error(">>>>>> Erro ao carregar e ingerir documentos: " + e.getMessage());
+			logger.error(">>>>>> AIService - Erro ao carregar e ingerir documentos: " + e.getMessage());
 		}
 	}
 	/*
@@ -76,30 +84,47 @@ public class AIService {
 	 */
 	private void loadAndIngestDocuments() throws IOException {
 		Path documentsPath = Paths.get("e:/documents");
-		logger.info(">>>>>> Verifica a existencia do path de documentos => " + documentsPath.toString());
+		logger.info(">>>>>> AIService - Verifica a existencia do path de documentos => " + documentsPath.toString());
 		if (!Files.exists(documentsPath)) {
 			Files.createDirectories(documentsPath);
-			logger.info(">>>>>> Cria o diretorio e um exemplo de documentos: " + documentsPath);
+			logger.info(">>>>>> AIService - Cria o diretorio e um exemplo de documentos: " + documentsPath);
 			Files.writeString(documentsPath.resolve("exemplo.txt"),
 					"O céu é azul e o mar é profundo. O sol brilha forte. A Terra é um planeta maravilhoso. A capital do Brasil é Brasília.");
 			logger.info(">>>>>> Arquivo de exemplo 'exemplo.txt' criado.");
 		}
-		logger.info(">>>>>> Carrega todos os arquivos neste path.");
+		logger.info(">>>>>> AIService - Carrega todos os arquivos neste path.");
 		List<Document> documents = FileSystemDocumentLoader.loadDocuments(documentsPath);
-		logger.info(">>>>>> Divide o documento em segumentos de texto (chunks) .");
+		logger.info(">>>>>> AIService - Divide o documento em segumentos de texto (chunks) .");
 		var documentSplitter = DocumentSplitters.recursive(500, 50);
 		List<TextSegment> segments = documentSplitter.splitAll(documents);
-		logger.info(">>>>>> Processa o arquivo para armazenar a informação em um banco de dados vetorial.");
+		logger.info(">>>>>> AIService - Processa o arquivo para armazenar a informação em um banco de dados vetorial.");
 		List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
 		embeddingStore.addAll(embeddings, segments);
 		//InMemoryEmbeddingStore<TextSegment> embeddignStore = new InMemoryEmbeddingStore<>();
 		//EmbeddingStoreIngestor.ingest(documents, embeddingStore);
 		logger.info(
-				"Documentos carregados e embeddings criados/armazenados. Total de segmentos: " + segments.size());
+				">>>>>> AIService - Documentos carregados e embeddings criados/armazenados. Total de segmentos: " + segments.size());
 	}
 
-	// Método público para interagir com o assistente.
+	// Método para avaliar o resultado da interacao e responder 
 	public String chatWithAssistant(String userMessage) {
-		return assistant.chat(userMessage);
+		// 1. Recuperar o contexto 
+        List<Content> relevantContents = contentRetriever.retrieve(Query.from(userMessage));
+
+        // 2. Verificar se algum conteúdo relevante foi recuperado
+        if (relevantContents.isEmpty()) {
+            // Se nenhum conteúdo relevante foi encontrado, retornar a mensagem padrão
+            return "Não consigo responder a esta pergunta com as informações disponíveis no documento.";
+        } else {
+            // Se houver conteúdo relevante, construir o prompt com o contexto
+            String context = relevantContents.stream()
+                    .map(content -> content.textSegment().text())
+                    .collect(java.util.stream.Collectors.joining("\n\n"));
+
+            // 3. Chamar o LLM com o contexto e a pergunta
+            // Aqui, a SystemMessage na interface Assistant ainda é importante para guiar o LLM
+            // a usar o contexto fornecido e não "alucinar" mesmo quando o contexto é dado.
+            return assistant.chat(userMessage + "\n\nContexto: " + context);
+        }
 	}
 }

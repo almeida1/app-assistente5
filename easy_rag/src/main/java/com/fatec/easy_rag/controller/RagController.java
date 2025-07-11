@@ -24,11 +24,11 @@ public class RagController {
     @PostMapping("/consultar")
     public String ask(@RequestBody PerguntaRequisicao request) {
     	 // --- Adicione este log para depuração ---
-    	logger.info(">>>>>> Requisição recebida: " + request);
+    	logger.info(">>>>>> Controller - Requisição recebida: " + request);
         if (request != null) {
-            System.out.println("Pergunta extraída: " + request.getQuestion());
+        	logger.info(">>>>>> Controller - Pergunta extraída: " + request.getQuestion());
         } else {
-            System.out.println("Objeto QuestionRequest é nulo!");
+        	logger.info(">>>>>> Controller - Objeto QuestionRequest é nulo!");
         }
         // --- Fim do log de depuração ---
 

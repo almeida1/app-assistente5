@@ -1,7 +1,6 @@
 package com.fatec.easy_rag.service;
 
 import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
@@ -19,12 +18,12 @@ public class LangChain4Config {
     // Configura e retorna uma instância de OpenAiChatModel.
     // As propriedades são injetadas do application.yml.
     @Bean
-    public OpenAiChatModel chatModel(
+    OpenAiChatModel chatModel(
             @Value("${langchain4j.open-ai.chat-model.api-key}") String apiKey,
             @Value("${langchain4j.open-ai.chat-model.model-name}") String modelName,
             @Value("${langchain4j.open-ai.chat-model.temperature}") Double temperature ) 
     		{
-    	System.out.println(apiKey);
+    	logger.info(">>>>>> LangChainConfig (openai)- configuraçao dos modelos de chat e embedding.");
         return OpenAiChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)
@@ -37,7 +36,7 @@ public class LangChain4Config {
     // Configura e retorna uma instância de OpenAiEmbeddingModel.
     // As propriedades são injetadas do application.yml.
     @Bean
-    public OpenAiEmbeddingModel embeddingModel(
+    OpenAiEmbeddingModel embeddingModel(
             @Value("${langchain4j.open-ai.embedding-model.api-key}") String apiKey,
             @Value("${langchain4j.open-ai.embedding-model.model-name}") String modelName) {
         return OpenAiEmbeddingModel.builder()
@@ -50,9 +49,10 @@ public class LangChain4Config {
 
     // Configura e retorna uma instância de InMemoryEmbeddingStore.
     // Este é um Vector Store em memória, simples para começar.
-    // Para produção, considere um Vector Store persistente.
+    // Em produção deve-se utilizar Vector Store persistente.
     @Bean
-    public EmbeddingStore<TextSegment> embeddingStore() {
+    EmbeddingStore<TextSegment> embeddingStore() {
+    	logger.info(">>>>>> LangChainConfig (openai) - Embedding store em memoria instanciado.");
         return new InMemoryEmbeddingStore<>();
     }
 }
