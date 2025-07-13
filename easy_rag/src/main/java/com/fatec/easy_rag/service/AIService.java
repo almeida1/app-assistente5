@@ -5,12 +5,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.stereotype.Service;
 
 import dev.langchain4j.data.document.Document;
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.document.loader.FileSystemDocumentLoader;
 import dev.langchain4j.data.document.splitter.DocumentSplitters;
 import dev.langchain4j.data.embedding.Embedding;
@@ -25,7 +29,7 @@ import dev.langchain4j.rag.query.Query;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import jakarta.annotation.PostConstruct;
-
+//https://docs.langchain4j.dev/tutorials/rag/#rag-stages
 @Service
 public class AIService {
 	private static final Logger logger = LogManager.getLogger(AIService.class);
@@ -92,8 +96,13 @@ public class AIService {
 					"O céu é azul e o mar é profundo. O sol brilha forte. A Terra é um planeta maravilhoso. A capital do Brasil é Brasília.");
 			logger.info(">>>>>> Arquivo de exemplo 'exemplo.txt' criado.");
 		}
+		
+		// 2. Extrai metadados
+        
 		logger.info(">>>>>> AIService - Carrega todos os arquivos neste path.");
 		List<Document> documents = FileSystemDocumentLoader.loadDocuments(documentsPath);
+		logger.info(">>>>>> AIService - Armazena documentos com metadados.");
+		armazenaDocumentosComMetadados(documents);
 		logger.info(">>>>>> AIService - Divide o documento em segumentos de texto (chunks) .");
 		var documentSplitter = DocumentSplitters.recursive(500, 50);
 		List<TextSegment> segments = documentSplitter.splitAll(documents);
@@ -126,5 +135,41 @@ public class AIService {
             // a usar o contexto fornecido e não "alucinar" mesmo quando o contexto é dado.
             return assistant.chat(userMessage + "\n\nContexto: " + context);
         }
+	}
+	private Map<String, String> extrairMetadados(String texto) {
+        return Map.of(
+            "fonte", "ISTQB CTAL-TA Syllabus v4.0",
+            "ano", "2025",
+            "tipo", "Referência Técnica",
+            "nivel", "Avançado",
+            "papel", texto.contains("Test Analyst") ? "Test Analyst" : "Outro",
+            "topico", texto.contains("Risk-Based Testing") ? "Risk-Based Testing" : "Processo de Teste"
+        );
+    }
+	
+	private List<Document> armazenaDocumentosComMetadados(List<Document> loadedDocuments){
+		System.out.println("\nDocumentos carregados:");
+        loadedDocuments.forEach(doc -> System.out.println("  Conteúdo: \"" + doc.text().substring(0, Math.min(doc.text().length(), 100)) + "...\""));
+
+        // Lista para armazenar os novos documentos com metadados
+        List<Document> processedDocuments = loadedDocuments.stream()
+            .map(doc -> {
+                // Passo 2: Criar os metadados a partir do texto do documento
+                Map<String, String> extractedMetadataMap = extrairMetadados(doc.text());
+                Metadata metadata = new Metadata(extractedMetadataMap);
+
+                // Passo 3: Criar um novo Document com o texto extraído e os metadados
+                // O Document.from() cria um novo objeto Document com o texto e os metadados fornecidos.
+                return Document.from(doc.text(), metadata);
+            })
+            .collect(Collectors.toList());
+
+        System.out.println("\nDocumentos processados com metadados:");
+        processedDocuments.forEach(doc -> {
+            System.out.println("  Conteúdo: \"" + doc.text().substring(0, Math.min(doc.text().length(), 100)) + "...\"");
+            System.out.println("  Metadados: " + doc.metadata());
+            System.out.println("  --------------------------------------");
+        });
+		return null;
 	}
 }
