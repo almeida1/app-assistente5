@@ -18,12 +18,12 @@ public class LangChain4Config {
     // Configura e retorna uma instância de OpenAiChatModel.
     // As propriedades são injetadas do application.yml.
     @Bean
-    OpenAiChatModel chatModel(
+    OpenAiChatModel chatLanguageModel(
             @Value("${langchain4j.open-ai.chat-model.api-key}") String apiKey,
             @Value("${langchain4j.open-ai.chat-model.model-name}") String modelName,
             @Value("${langchain4j.open-ai.chat-model.temperature}") Double temperature ) 
     		{
-    	logger.info(">>>>>> LangChainConfig (openai)- configuraçao dos modelos de chat e embedding.");
+    	logger.info(">>>>>> LangChainConfig - configura os parametros do modelo de chat.");
         return OpenAiChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)
@@ -33,13 +33,13 @@ public class LangChain4Config {
                 .build();
     }
 
-    // Configura e retorna uma instância de OpenAiEmbeddingModel.
-    // As propriedades são injetadas do application.yml.
+    // Configura e retorna uma instância de OpenAiEmbeddingModel considerando application properties.
     @Bean
     OpenAiEmbeddingModel embeddingModel(
             @Value("${langchain4j.open-ai.embedding-model.api-key}") String apiKey,
             @Value("${langchain4j.open-ai.embedding-model.model-name}") String modelName) {
-        return OpenAiEmbeddingModel.builder()
+    	logger.info(">>>>>> LangChainConfig - configura os parametros do Embedding model.");
+    	return OpenAiEmbeddingModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .logRequests(true) // Habilita o log das requisições para depuração
@@ -52,7 +52,7 @@ public class LangChain4Config {
     // Em produção deve-se utilizar Vector Store persistente.
     @Bean
     EmbeddingStore<TextSegment> embeddingStore() {
-    	logger.info(">>>>>> LangChainConfig (openai) - Embedding store em memoria instanciado.");
+    	logger.info(">>>>>> LangChainConfig - obtem uma instancia de Embedding store em memoria.");
         return new InMemoryEmbeddingStore<>();
     }
 }
